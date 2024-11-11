@@ -1,0 +1,23 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+*.egg-info
+
+# Virtual environments
+.venv/
+
+# uv-specific files
+.uv/
+
+# Ignore output directory contents but keep the directory
+resources/output/*
+!resources/output/.gitkeep
+
+# Ignore data files if they're large or sensitive
+resources/data/*
+!resources/data/.gitkeep
+
+# Keep csv directory
+!resources/csv

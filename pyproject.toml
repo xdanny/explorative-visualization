@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sdg7_explorer"
+version = "0.1.0"
+requires-python = ">=3.8"
+dependencies = [
+    "streamlit",
+    "polars",
+    "plotly",
+    "altair"
+]
+
+[project.scripts]
+sdg7-dev = "sdg7_explorer.dev:run_dev"

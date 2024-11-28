@@ -16,8 +16,7 @@ resources/output/*
 !resources/output/.gitkeep
 
 # Ignore data files if they're large or sensitive
-resources/data/*
-!resources/data/.gitkeep
+
 
 # Keep csv directory
 !resources/csv

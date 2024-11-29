@@ -172,7 +172,7 @@ def income_based_disparities(df, income_groups, title):
     return fig
 
 def regional_analysis_choropleth(df, income_groups, title):
-    """Create an enhanced choropleth map visualization with year snapshots"""
+    """Create choropleth map visualization with 5-year rolling investment totals"""
     
     # Merge data with income groups and ensure ISO codes are present
     df_with_region = df.join(
@@ -182,237 +182,233 @@ def regional_analysis_choropleth(df, income_groups, title):
         how="inner"
     )
     
-    # Filter out null values and get min/max
-    df_with_region = df_with_region.filter(
-        (pl.col("DataValue").is_not_null()) &
-        (pl.col("ISO-code").is_not_null())
-    )
-    
-    # Check if we have data to visualize
-    if df_with_region.is_empty():
-        st.warning("No data available for visualization")
-        return None
-        
-    # Scale values to billions for better readability
-    df_with_region = df_with_region.with_columns(
-        pl.col("DataValue").map_elements(lambda x: x/1000).alias("DataValue_B")
-    )
-    
-    value_min = float(df_with_region["DataValue_B"].min())
-    value_max = float(df_with_region["DataValue_B"].max())
+    # Add explanation about the 5-year window
+    st.info("""
+        📊 This visualization shows 5-year cumulative investments.
+        For example, the 2020 value represents the total investment from 2016 to 2020.
+        This helps to smooth out year-to-year variations and show sustained investment patterns.
+    """)
     
     # Create tabs for different views
-    tab1, tab2 = st.tabs(["Current Year Map", "Year Snapshots"])
+    tab1, tab2 = st.tabs(["Current Period", "Historical Snapshots"])
     
     with tab1:
-        # Single map view
+        # Get the latest year
         latest_year = df_with_region["Year"].max()
-        latest_data = df_with_region.filter(pl.col("Year") == latest_year).to_pandas()
+        start_year = latest_year - 4  # 5 year window
         
-        fig = go.Figure()
-        
-        # Add choropleth trace with enhanced color scheme
-        fig.add_trace(go.Choropleth(
-            locations=latest_data["ISO-code"],
-            z=latest_data["DataValue_B"],
-            text=latest_data["Economy"],
-            colorscale=[
-                [0, '#f7fbff'],      # Very light blue
-                [0.1, '#deebf7'],    # Light blue
-                [0.2, '#c6dbef'],    # Pale blue
-                [0.3, '#9ecae1'],    # Sky blue
-                [0.4, '#6baed6'],    # Medium blue
-                [0.5, '#4292c6'],    # Blue
-                [0.6, '#2171b5'],    # Deep blue
-                [0.7, '#08519c'],    # Dark blue
-                [0.8, '#08306b'],    # Very dark blue
-                [0.9, '#042144'],    # Navy
-                [1.0, '#021b35']     # Deep navy
-            ],
-            zmin=value_min,
-            zmax=value_max,
-            marker_line_color='white',
-            marker_line_width=0.5,
-            colorbar=dict(
-                title="Investment (USD Billion)",
-                thickness=15,
-                len=0.9,
-                tickfont=dict(size=12, color='white'),
-                titlefont=dict(size=14, color='white'),
-                tickformat='.1f'
-            ),
-            hovertemplate="<b>%{text}</b><br>" +
-                         "Investment: $%{z:.2f}B<br>" +
-                         "<extra></extra>"
-        ))
-        
-        # Update layout for better visibility
-        fig.update_layout(
-            title=dict(
-                text=f"Global Distribution of {title} ({latest_year})",
-                font=dict(size=24)
-            ),
-            geo=dict(
-                showframe=False,
-                showcoastlines=True,
-                projection_type='equirectangular',
-                bgcolor='rgba(0,0,0,0)',
-                coastlinecolor='rgba(255,255,255,0.8)',
-                showland=True,
-                landcolor='rgba(50,50,50,0.8)',
-                showcountries=True,
-                countrycolor='rgba(255,255,255,0.8)',
-                countrywidth=0.5,
-                projection_scale=1.3,  # Increased scale
-                center=dict(lat=20, lon=0)
-            ),
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            height=700,  # Increased height
-            margin=dict(r=0, l=0, t=50, b=0),
-            font=dict(color='white', size=14)
+        # Calculate 5-year sum for the latest period
+        current_data = (df_with_region
+            .filter(pl.col("Year").is_between(start_year, latest_year))
+            .group_by(["ISO-code", "Economy", "Region"])
+            .agg([
+                pl.col("DataValue").sum().alias("DataValue")
+            ])
+            .with_columns([
+                (pl.col("DataValue") / 1000).alias("DataValue_B")
+            ])
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        create_choropleth(current_data, f"5-Year Cumulative Investment ({start_year}-{latest_year})")
     
     with tab2:
-        # Multiple year snapshots
-        snapshot_years = [2000, 2005, 2010, 2015, 2020]
-        available_years = df_with_region["Year"].unique().to_list()
-        valid_snapshots = [year for year in snapshot_years if year in available_years]
+        # Calculate snapshot years (every 5 years)
+        all_years = sorted(df_with_region["Year"].unique().to_list())
+        snapshot_years = [year for year in all_years if year % 5 == 0][-3:]  # Last 3 snapshot years
         
-        if valid_snapshots:
-            # Use two rows for better visibility
-            rows = 2
-            cols_per_row = 3
-            for i in range(0, len(valid_snapshots), cols_per_row):
-                cols = st.columns(cols_per_row)
-                for j, col in enumerate(cols):
-                    if i + j < len(valid_snapshots):
-                        year = valid_snapshots[i + j]
-                        with col:
-                            year_data = df_with_region.filter(pl.col("Year") == year).to_pandas()
-                            
-                            snapshot_fig = go.Figure()
-                            
-                            snapshot_fig.add_trace(go.Choropleth(
-                                locations=year_data["ISO-code"],
-                                z=year_data["DataValue_B"],
-                                text=year_data["Economy"],
-                                colorscale=[
-                                    [0, '#f7fbff'],      # Very light blue
-                                    [0.1, '#deebf7'],    # Light blue
-                                    [0.2, '#c6dbef'],    # Pale blue
-                                    [0.3, '#9ecae1'],    # Sky blue
-                                    [0.4, '#6baed6'],    # Medium blue
-                                    [0.5, '#4292c6'],    # Blue
-                                    [0.6, '#2171b5'],    # Deep blue
-                                    [0.7, '#08519c'],    # Dark blue
-                                    [0.8, '#08306b'],    # Very dark blue
-                                    [0.9, '#042144'],    # Navy
-                                    [1.0, '#021b35']     # Deep navy
-                                ],
-                                zmin=value_min,
-                                zmax=value_max,
-                                marker_line_color='white',
-                                marker_line_width=0.5,
-                                colorbar=dict(
-                                    title="Investment (USD Billion)",
-                                    thickness=15,
-                                    len=0.9,
-                                    tickfont=dict(size=12, color='white'),
-                                    titlefont=dict(size=14, color='white'),
-                                    tickformat='.1f'
-                                ),
-                                hovertemplate="<b>%{text}</b><br>" +
-                                             "Investment: $%{z:.2f}B<br>" +
-                                             "<extra></extra>"
-                            ))
-                            
-                            snapshot_fig.update_layout(
-                                title=dict(
-                                    text=str(year),
-                                    font=dict(size=20)
-                                ),
-                                geo=dict(
-                                    showframe=False,
-                                    showcoastlines=True,
-                                    projection_type='equirectangular',
-                                    bgcolor='rgba(0,0,0,0)',
-                                    coastlinecolor='rgba(255,255,255,0.8)',
-                                    showland=True,
-                                    landcolor='rgba(50,50,50,0.8)',
-                                    showcountries=True,
-                                    countrycolor='rgba(255,255,255,0.8)',
-                                    countrywidth=0.5,
-                                    projection_scale=1.2,
-                                    center=dict(lat=20, lon=0)
-                                ),
-                                paper_bgcolor='rgba(0,0,0,0)',
-                                plot_bgcolor='rgba(0,0,0,0)',
-                                height=400,  # Increased height for snapshots
-                                margin=dict(r=0, l=0, t=30, b=0),
-                                font=dict(color='white', size=12)
-                            )
-                            
-                            st.plotly_chart(snapshot_fig, use_container_width=True)
+        for end_year in snapshot_years:
+            start_year = end_year - 4
+            snapshot_data = (df_with_region
+                .filter(pl.col("Year").is_between(start_year, end_year))
+                .group_by(["ISO-code", "Economy", "Region"])
+                .agg([
+                    pl.col("DataValue").sum().alias("DataValue")
+                ])
+                .with_columns([
+                    (pl.col("DataValue") / 1000).alias("DataValue_B")
+                ])
+            )
             
-            # Add a color scale reference
-            st.markdown("### Investment Range")
-            st.markdown(f"""
-            - Minimum: ${value_min:.2f}B
-            - Maximum: ${value_max:.2f}B
-            """)
+            create_choropleth(snapshot_data, f"5-Year Investment ({start_year}-{end_year})")
+
+def create_choropleth(data, title):
+    """Helper function to create choropleth map"""
+    value_min = float(data["DataValue_B"].min())
+    value_max = float(data["DataValue_B"].max())
     
-    # Add analysis section
-    st.markdown("### Geographic Distribution Analysis")
-    with st.expander("Key Insights"):
-        st.markdown("""
-        - **Regional Patterns**: Identify major investment hubs and underserved regions
-        - **Temporal Changes**: Track how investment patterns have evolved over time
-        - **Investment Gaps**: Highlight areas needing increased investment focus
-        """)
+    fig = go.Figure()
+    fig.add_trace(go.Choropleth(
+        locations=data["ISO-code"],
+        z=data["DataValue_B"],
+        text=data["Economy"],
+        colorscale=[
+            [0, '#f7fbff'],      # Very light blue
+            [0.01, '#deebf7'],   # Light blue
+            [0.02, '#c6dbef'],   # Pale blue
+            [0.05, '#9ecae1'],   # Sky blue
+            [0.1, '#6baed6'],    # Medium blue
+            [0.2, '#4292c6'],    # Blue
+            [0.3, '#2171b5'],    # Deep blue
+            [0.5, '#08519c'],    # Dark blue
+            [0.7, '#08306b'],    # Very dark blue
+            [0.9, '#042144'],    # Navy
+            [1.0, '#021b35']     # Deep navy
+        ],
+        zmin=0,
+        zmax=max(1, value_max),
+        marker_line_color='white',
+        marker_line_width=0.5,
+        colorbar=dict(
+            title="Investment (USD Billion)",
+            thickness=15,
+            len=0.9,
+            tickfont=dict(size=12, color='white'),
+            titlefont=dict(size=14, color='white'),
+            tickformat='.2f'
+        ),
+        hovertemplate="<b>%{text}</b><br>" +
+                     "Investment: $%{z:.2f}B<br>" +
+                     "<extra></extra>"
+    ))
+    
+    fig.update_layout(
+        title=title,
+        geo=dict(
+            showframe=False,
+            showcoastlines=True,
+            projection_type='equirectangular',
+            bgcolor='rgba(0,0,0,0)'
+        ),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        height=600,
+        margin=dict(l=0, r=0, t=30, b=0)
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
 
 def technology_mix(df, title):
     """Analyze and visualize the technology mix in investments"""
     st.subheader("Technology Distribution Analysis")
     
-    # Group data by Technology
+    # Group data by Technology and Year
     tech_data = (df
         .group_by(["Technology", "Year"])
         .agg([
             pl.col("DataValue").sum().alias("Investment")
         ])
         .filter(pl.col("Technology").is_not_null())
-    )
+    ).to_pandas()
     
-    if tech_data.is_empty():
+    if tech_data.empty:
         st.warning("No technology data available for the selected filters.")
         return
-        
-    # Convert to pandas for plotting
-    tech_df = tech_data.to_pandas()
     
-    # Create visualization
+    # Sort technologies by total investment
+    tech_totals = tech_data.groupby("Technology")["Investment"].sum().sort_values(ascending=False)
+    available_techs = tech_totals.index.tolist()
+    
+    # Technology selector with default selection of top 3
+    selected_techs = st.multiselect(
+        "Select Technologies to Compare",
+        options=available_techs,
+        default=available_techs[:3],
+        help="Select specific technologies to focus on their investment trends. Default shows top 3 by investment volume."
+    )
+    
+    if not selected_techs:
+        st.warning("Please select at least one technology to display.")
+        return
+    
+    # Filter and sort data
+    filtered_df = tech_data[tech_data["Technology"].isin(selected_techs)].copy()
+    filtered_df["Year"] = filtered_df["Year"].astype(int)
+    filtered_df = filtered_df.sort_values("Year")
+    
+    # Create stacked area chart
     fig = px.area(
-        tech_df,
+        filtered_df,
         x="Year",
         y="Investment",
         color="Technology",
-        title=f"Technology Mix in {title}",
+        title="Technology Investment Distribution Over Time",
         template="plotly_dark"
     )
     
+    # Enhanced layout
     fig.update_layout(
-        height=500,
+        height=600,
         yaxis_title="Investment (USD Million)",
-        hovermode="x unified"
+        hovermode="x unified",
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01,
+            bgcolor="rgba(17, 17, 17, 0.8)",
+            bordercolor="rgba(255, 255, 255, 0.3)",
+            borderwidth=1,
+            font=dict(color="white")
+        ),
+        xaxis=dict(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor="rgba(255, 255, 255, 0.1)"
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor="rgba(255, 255, 255, 0.1)"
+        )
+    )
+    
+    # Add hover template
+    fig.update_traces(
+        hovertemplate="<b>%{y:.1f}M USD</b><br>" +
+                     "Year: %{x}<br>" +
+                     "<extra></extra>"
     )
     
     st.plotly_chart(fig, use_container_width=True)
+    
+    # Add insights section with improved formatting
+    with st.expander("📊 Technology Investment Insights"):
+        # Calculate insights
+        total_by_tech = tech_data.groupby("Technology")["Investment"].sum()
+        
+        # Calculate growth rates
+        growth_rates = {}
+        for tech in selected_techs:
+            tech_data_sorted = filtered_df[filtered_df["Technology"] == tech].sort_values("Year")
+            if len(tech_data_sorted) >= 2:
+                first_val = tech_data_sorted["Investment"].iloc[0]
+                last_val = tech_data_sorted["Investment"].iloc[-1]
+                if first_val > 0:
+                    growth = ((last_val / first_val) - 1) * 100
+                    growth_rates[tech] = growth
+        
+        # Sort technologies by investment
+        selected_totals = total_by_tech[selected_techs].sort_values(ascending=False)
+        
+        st.markdown("### Key Findings")
+        
+        st.markdown("#### 🔹 Investment Overview")
+        for tech, inv in selected_totals.items():
+            st.markdown(f"- **{tech}**: ${inv/1000:.1f}B total investment")
+        
+        st.markdown("#### 🔹 Growth Trends")
+        for tech, growth in sorted(growth_rates.items(), key=lambda x: x[1], reverse=True):
+            st.markdown(f"- **{tech}**: {growth:.1f}% overall growth")
+        
+        st.markdown("#### 🔹 Latest Year Analysis")
+        latest_year = filtered_df["Year"].max()
+        latest_data = filtered_df[filtered_df["Year"] == latest_year]
+        for tech in selected_techs:
+            tech_inv = latest_data[latest_data["Technology"] == tech]["Investment"].iloc[0]
+            st.markdown(f"- **{tech}**: ${tech_inv/1000:.1f}B in {latest_year}")
 
 def top_performers(df, income_groups, title):
-    """Analyze and visualize top performing countries"""
+    """Analyze and visualize top performing countries by region"""
     st.subheader("Top Investment Leaders")
     
     # Merge with income groups
@@ -423,35 +419,93 @@ def top_performers(df, income_groups, title):
         how="inner"
     )
     
+    # Get unique regions and add "All Regions" option
+    regions = ["All Regions"] + sorted(df_with_income["Region"].unique().to_list())
+    
+    # Region selector
+    selected_region = st.selectbox(
+        "Select Region",
+        options=regions,
+        help="Filter to see top performing countries within a specific region"
+    )
+    
+    # Filter data based on region selection
+    if selected_region != "All Regions":
+        filtered_df = df_with_income.filter(pl.col("Region") == selected_region)
+    else:
+        filtered_df = df_with_income
+    
     # Calculate total investment by country
-    top_countries = (df_with_income
-        .group_by(["Economy", "Region", "Income group"])
+    top_countries = (filtered_df
+        .group_by(["Economy", "Income group"])
         .agg([
-            pl.col("DataValue").sum().alias("Total_Investment")
+            pl.col("DataValue").sum().alias("Total_Investment"),
+            pl.col("DataValue").mean().alias("Avg_Annual_Investment")
         ])
         .sort("Total_Investment", descending=True)
         .head(10)
-    ).to_pandas()
+        .to_pandas()
+    )
     
     # Create bar chart
     fig = px.bar(
         top_countries,
         x="Economy",
         y="Total_Investment",
-        color="Region",
-        title=f"Top 10 Countries by Total {title}",
+        color="Income group",
+        title=f"Top 10 Countries {f'in {selected_region}' if selected_region != 'All Regions' else ''}",
         template="plotly_dark",
-        hover_data=["Income group"]
+        hover_data=["Avg_Annual_Investment"]
     )
     
     fig.update_layout(
         height=500,
         xaxis_title="Country",
         yaxis_title="Total Investment (USD Million)",
-        xaxis_tickangle=-45
+        xaxis_tickangle=-45,
+        hovermode="x unified",
+        hoverlabel=dict(
+            bgcolor="rgba(0,0,0,0.8)",
+            font_size=12
+        )
+    )
+    
+    fig.update_traces(
+        hovertemplate="<b>%{x}</b><br>" +
+                     "Total Investment: $%{y:.1f}M<br>" +
+                     "Avg Annual: $%{customdata[0]:.1f}M<br>" +
+                     "<extra></extra>"
     )
     
     st.plotly_chart(fig, use_container_width=True)
+    
+    # Add insights with improved formatting
+    with st.expander("📊 Investment Insights"):
+        total_investment = top_countries["Total_Investment"].sum()
+        avg_investment = top_countries["Avg_Annual_Investment"].mean()
+        top_income_group = top_countries.groupby("Income group")["Total_Investment"].sum().idxmax()
+        
+        # Format income group distribution
+        income_dist = top_countries['Income group'].value_counts()
+        income_dist_text = "\n".join([f"  • {group}: {count} countries" 
+                                    for group, count in income_dist.items()])
+        
+        st.markdown(f"""
+        ### Key Findings {f'for {selected_region}' if selected_region != 'All Regions' else ''}
+        
+        💰 Investment Overview
+        • Total investment in top 10: ${total_investment/1000:.1f}B
+        • Average annual investment per country: ${avg_investment:.1f}M
+        
+        📊 Income Group Distribution
+        • Dominant income group: {top_income_group}
+        • Distribution:
+        {income_dist_text}
+        
+        🏆 Top Performer Details
+        • Leading country: {top_countries.iloc[0]['Economy']}
+        • Investment: ${top_countries.iloc[0]['Total_Investment']/1000:.1f}B
+        """)
 
 def growth_rate_analysis(df, income_groups, title):
     """Analyze and visualize investment growth rates"""
@@ -850,34 +904,26 @@ def roi_analysis(df, income_groups, window_years=5):
     """)
 
 def setup_sidebar_filters(df):
-    """Create global filters in the sidebar"""
+    """Setup sidebar filters for the application"""
     st.sidebar.header("Global Filters")
     
-    # Year range filter
-    year_min = int(df["Year"].min())
-    year_max = int(df["Year"].max())
-    selected_years = st.sidebar.slider(
+    # Year range selector
+    year_range = st.sidebar.slider(
         "Select Year Range",
-        min_value=year_min,
-        max_value=year_max,
-        value=(year_max-10, year_max)
+        min_value=int(df["Year"].min()),
+        max_value=int(df["Year"].max()),
+        value=(int(df["Year"].min()), int(df["Year"].max()))
     )
     
-    # Region filter
-    regions = sorted(df["Region"].unique().to_list())
+    # Region multiselect
+    all_regions = df["Region"].unique().to_list()
     selected_regions = st.sidebar.multiselect(
         "Select Regions",
-        options=regions,
-        default=regions[:5]
+        options=all_regions,
+        default=all_regions
     )
     
-    # Plot type selector
-    plot_type = st.sidebar.selectbox(
-        "Plot Type",
-        ["Stacked Area", "Stream", "Normalized"]
-    )
-    
-    return selected_years, selected_regions, plot_type
+    return year_range, selected_regions
 
 def income_based_analysis(df, income_groups, title):
     """Enhanced visualization of income-based investment patterns with advanced features"""
@@ -1131,14 +1177,59 @@ def income_based_analysis(df, income_groups, title):
         """)
 
 def main():
-    """Main function for the SDG7 Data Explorer application"""
-    st.title("SDG7 Data Explorer")
+    """Main function for the Clean Energy Investment Explorer application"""
+    
+    # Page config with custom title and icon
+    st.set_page_config(
+        page_title="Clean Energy Investment Explorer",
+        page_icon="🌍",
+        layout="wide"
+    )
+    
+    # Main title and introduction
+    st.title("Clean Energy Investment Explorer")
+    st.markdown("""
+    ### Tracking Global Progress in Sustainable Energy Adoption
+    
+    This interactive dashboard explores the global transition to clean energy through the lens of 
+    investment patterns, technological breakthroughs, and regional adoption rates. Aligned with the 
+    UN's Sustainable Development Goal 7 (SDG7), it provides insights into the worldwide journey 
+    toward sustainable and modern energy for all.
+    
+    #### 🎯 Key Focus Areas
+    • Regional investment patterns and disparities
+    • Technology adoption across income groups
+    • Impact of technological breakthroughs
+    • Progress tracking toward SDG7 goals
+    
+    #### 📊 How to Use This Dashboard
+    Use the sidebar filters to focus on specific regions or time periods. Each section provides 
+    different insights into the clean energy transition, from global trends to detailed country-level 
+    analysis.
+    """)
+    
+    # Add divider
+    st.markdown("---")
     
     # Load data
     public_investment, income_groups = load_data()
     
     # Setup global filters in sidebar
-    selected_years, selected_regions, plot_type = setup_sidebar_filters(public_investment)
+    st.sidebar.markdown("## 🔍 Global Filters")
+    selected_years, selected_regions = setup_sidebar_filters(public_investment)
+    
+    # Add context about the data in sidebar
+    st.sidebar.markdown("""
+    #### About the Data
+    This dashboard uses public investment data in clean energy technologies, 
+    tracking progress toward sustainable energy adoption globally.
+    
+    Data is categorized by:
+    • Geographic regions
+    • Income groups
+    • Technology types
+    • Investment volumes
+    """)
     
     # Filter data based on global selections
     filtered_data = public_investment.filter(
@@ -1146,42 +1237,35 @@ def main():
         (pl.col("Region").is_in(selected_regions))
     )
     
-    # Display visualizations
-    st.header("1. Global Progress")
-    global_progress_visualization(filtered_data, "Public Investment")
+    # Display visualizations with enhanced section headers
+    st.header("🌍 1. Global Investment Landscape")
+    global_progress_visualization(filtered_data, "Clean Energy Investment")
     
-    st.header("2. Income-based Investment Analysis")
-    income_based_analysis(filtered_data, income_groups, "Public Investment")
+    st.header("💰 2. Investment Distribution by Income Level")
+    income_based_analysis(filtered_data, income_groups, "Clean Energy Investment")
     
-    st.header("3. Regional Analysis")
-    regional_analysis_choropleth(filtered_data, income_groups, "Public Investment")
+    st.header("🗺️ 3. Regional Investment Patterns")
+    regional_analysis_choropleth(filtered_data, income_groups, "Clean Energy Investment")
     
-    st.header("4. Investment Categories")
-    technology_mix(filtered_data, "Public Investment")
+    st.header("⚡ 4. Technology Innovation & Adoption")
+    technology_mix(filtered_data, "Clean Energy Investment")
     
-    st.header("5. Top Performers")
-    top_performers(filtered_data, income_groups, "Public Investment")
+    st.header("🏆 5. Leading Countries")
+    top_performers(filtered_data, income_groups, "Clean Energy Investment")
     
-    st.header("6. Growth Rate Analysis")
-    growth_rate_analysis(filtered_data, income_groups, "Public Investment")
+    st.header("📈 6. Growth & Impact Analysis")
+    growth_rate_analysis(filtered_data, income_groups, "Clean Energy Investment")
     
-    st.header("7. Investment Impact Analysis")
-    st.subheader("Investment Impact on Public Investment")
-    investment_impact_analysis(filtered_data, income_groups, "Public Investment")
+    # Add footer with additional context
+    st.markdown("---")
+    st.markdown("""
+    #### About This Project
+    This interactive visualization tool is part of a research project exploring clean energy adoption 
+    and technological breakthroughs. It aims to provide stakeholders with insights for informed 
+    decision-making in the global energy transition.
     
-    st.subheader("Public Investment Trends")
-    investment_trends(filtered_data, income_groups)
-    
-    st.subheader("Return on Investment Analysis")
-    roi_analysis(filtered_data, income_groups)
-    
-    # Display data statistics
-    st.header("Data Statistics")
-    st.write(f"Number of countries/regions in the dataset: {filtered_data['Economy'].n_unique()}")
-    st.write(f"Year range: {filtered_data['Year'].min()} to {filtered_data['Year'].max()}")
-    st.write(f"Total number of data points: {len(filtered_data)}")
-    st.write(f"Number of income groups: {income_groups['Income group'].n_unique()}")
-    st.write(f"Number of regions: {income_groups['Region'].n_unique()}")
+    *Data sources: Public investment data in renewable energy technologies, World Bank income classifications*
+    """)
 
 if __name__ == "__main__":
     main()

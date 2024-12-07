@@ -83,67 +83,85 @@ def process_investment_data(df):
     return processed
 
 def global_progress_visualization(df, title):
-    """Create an enhanced area plot visualization of global progress."""
-    # Prepare data
-    world_data = (df
-        .group_by(["Year", "Region"])
-        .agg(
-            pl.col("DataValue").sum().alias("Investment")
+    """Create an enhanced area plot visualization of global progress with renewable distinction"""
+    
+    # Create tabs for different views
+    tab1, tab2 = st.tabs(["Regional View", "Renewable vs Non-Renewable"])
+    
+    with tab1:
+        # Original regional view
+        world_data = (df
+            .group_by(["Year", "Region"])
+            .agg(
+                pl.col("DataValue").sum().alias("Investment")
+            )
+            .sort("Year")
+        ).to_pandas()
+        
+        fig1 = px.area(
+            world_data,
+            x="Year",
+            y="Investment",
+            color="Region",
+            title=f"Global {title} Trend by Region",
+            template="plotly_dark"
         )
-        .sort("Year")
-    ).to_pandas()
+        
+        st.plotly_chart(fig1, use_container_width=True)
     
-    # Custom color palette
-    color_palette = {
-        'East Asia & Pacific': '#1f77b4',      # Strong blue
-        'Europe': '#2ca02c',                   # Forest green
-        'North America': '#ff7f0e',            # Orange
-        'Latin America & Caribbean': '#d62728', # Red
-        'South Asia': '#9467bd',               # Purple
-        'Sub-Saharan Africa': '#8c564b',       # Brown
-        'Middle East & North Africa': '#e377c2',# Pink
-        'Central Asia': '#7f7f7f',             # Gray
-        'Oceania': '#bcbd22',                  # Olive
-        'Other': '#17becf'                     # Cyan
-    }
-    
-    # Create visualization with custom colors
-    fig = px.area(
-        world_data,
-        x="Year",
-        y="Investment",
-        color="Region",
-        title=f"Global {title} Trend by Region",
-        template="plotly_dark",
-        color_discrete_map=color_palette
-    )
-    
-    # Enhance the figure layout
-    fig.update_layout(
-        height=500,
-        yaxis_title="Investment (USD Million)",
-        hovermode="x unified",
-        legend=dict(
-            yanchor="top",
-            y=0.99,
-            xanchor="left",
-            x=0.01,
-            bgcolor="rgba(17, 17, 17, 0.8)",
-            bordercolor="rgba(255, 255, 255, 0.3)",
-            borderwidth=1,
-            font=dict(color="white")
+    with tab2:
+        # Renewable vs Non-Renewable view
+        category_data = (df
+            .group_by(["Year", "Category"])
+            .agg(
+                pl.col("DataValue").sum().alias("Investment")
+            )
+            .sort("Year")
+        ).to_pandas()
+        
+        fig2 = px.line(
+            category_data,
+            x="Year",
+            y="Investment",
+            color="Category",
+            title="Investment by Energy Category",
+            template="plotly_dark",
+            color_discrete_map={
+                "Renewables": "#2ecc71",     # Green for renewables
+                "Non-renewables": "#e74c3c"  # Red for non-renewables
+            }
         )
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Add key insights
-    with st.expander("Key Insights"):
-        st.markdown("""
-        - Investment trends show significant regional variations
-        - Overall upward trend in renewable energy investment
-        - Some regions show more consistent growth than others
-        """)
+        
+        # Add area under the lines
+        fig2.update_traces(fill='tonexty')
+        
+        # Enhance layout
+        fig2.update_layout(
+            height=500,
+            yaxis_title="Investment (USD Million)",
+            hovermode="x unified",
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01,
+                bgcolor="rgba(17, 17, 17, 0.8)"
+            )
+        )
+        
+        st.plotly_chart(fig2, use_container_width=True)
+        
+        # Add renewable percentage metric
+        latest_year = category_data["Year"].max()
+        latest_data = category_data[category_data["Year"] == latest_year]
+        renewable_pct = (latest_data[latest_data["Category"] == "Renewables"]["Investment"].iloc[0] / 
+                        latest_data["Investment"].sum() * 100)
+        
+        st.metric(
+            "Renewable Investment Share",
+            f"{renewable_pct:.1f}%",
+            "Target: 75% by 2030"
+        )
 
 def income_based_disparities(df, income_groups, title):
     """Create visualization of disparities based on income groups."""
@@ -926,9 +944,9 @@ def setup_sidebar_filters(df):
     return year_range, selected_regions
 
 def income_based_analysis(df, income_groups, title):
-    """Enhanced visualization of income-based investment patterns with advanced features"""
+    """Enhanced income-based analysis with renewable distinction"""
     
-    # Merge investment data with income groups
+    # Merge with income groups
     df_with_income = df.join(
         income_groups,
         left_on="Economy",
@@ -936,244 +954,172 @@ def income_based_analysis(df, income_groups, title):
         how="inner"
     )
     
-    # Add tabs for different analysis views
-    tab1, tab2, tab3 = st.tabs(["Investment Trends", "Regional Distribution", "Growth Analysis"])
+    # Create tabs for different views
+    tab1, tab2 = st.tabs(["Income Group Trends", "Renewable Share by Income"])
     
     with tab1:
-        # Enhanced time series visualization
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            # Interactive time series
-            income_trends = (df_with_income
-                .group_by(["Year", "Income group"])
-                .agg(pl.col("DataValue").sum().alias("Investment"))
-                .sort("Year")
-            ).to_pandas()
-            
-            # Custom color palette
-            income_colors = {
-                'High income': '#2ecc71',
-                'Upper middle income': '#3498db',
-                'Lower middle income': '#9b59b6',
-                'Low income': '#e74c3c'
-            }
-            
-            # Add visualization type selector
-            viz_type = st.selectbox(
-                "Select Visualization Type",
-                ["Area", "Line", "Bar"],
-                key="income_viz_type"
-            )
-            
-            if viz_type == "Area":
-                fig1 = px.area(
-                    income_trends,
-                    x="Year",
-                    y="Investment",
-                    color="Income group",
-                    color_discrete_map=income_colors,
-                    title="Investment Trends by Income Group",
-                    template="plotly_dark"
-                )
-            elif viz_type == "Line":
-                fig1 = px.line(
-                    income_trends,
-                    x="Year",
-                    y="Investment",
-                    color="Income group",
-                    color_discrete_map=income_colors,
-                    title="Investment Trends by Income Group",
-                    template="plotly_dark"
-                )
-            else:  # Bar
-                fig1 = px.bar(
-                    income_trends,
-                    x="Year",
-                    y="Investment",
-                    color="Income group",
-                    color_discrete_map=income_colors,
-                    title="Investment Trends by Income Group",
-                    template="plotly_dark"
-                )
-            
-            fig1.update_layout(
-                height=500,
-                hovermode="x unified",
-                legend=dict(
-                    yanchor="top",
-                    y=0.99,
-                    xanchor="left",
-                    x=0.01,
-                    bgcolor='rgba(17, 17, 17, 0.8)',
-                    bordercolor="rgba(255, 255, 255, 0.3)",
-                    borderwidth=1,
-                    font=dict(color='white')
-                )
-            )
-            
-            st.plotly_chart(fig1, use_container_width=True)
-        
-        with col2:
-            # Add year selector for distribution
-            latest_year = df_with_income["Year"].max()
-            
-            # Distribution for selected year
-            year_data = (df_with_income
-                .filter(pl.col("Year") == latest_year)
-                .group_by("Income group")
-                .agg(pl.col("DataValue").sum().alias("Investment"))
-            ).to_pandas()
-            
-            fig2 = px.pie(
-                year_data,
-                values="Investment",
-                names="Income group",
-                title=f"Investment Distribution ({latest_year})",
-                color_discrete_map=income_colors,
-                template="plotly_dark"
-            )
-            
-            fig2.update_traces(
-                textposition='inside',
-                textinfo='percent+label'
-            )
-            
-            st.plotly_chart(fig2, use_container_width=True)
-    
-    with tab2:
-        # Regional distribution by income group
-        st.subheader("Regional Distribution by Income Group")
-        
-        region_income = (df_with_income
-            .group_by(["Region", "Income group"])
-            .agg(pl.col("DataValue").sum().alias("Investment"))
-            .sort("Investment", descending=True)
-        ).to_pandas()
-        
-        fig3 = px.sunburst(
-            region_income,
-            path=['Region', 'Income group'],
-            values='Investment',
-            color='Income group',
-            color_discrete_map=income_colors,
-            template="plotly_dark"
-        )
-        
-        fig3.update_layout(height=600)
-        st.plotly_chart(fig3, use_container_width=True)
-    
-    with tab3:
-        # Growth analysis
-        st.subheader("Investment Growth Analysis")
-        
-        # Calculate growth rates
-        growth_data = (df_with_income
+        # Original income group view
+        income_trends = (df_with_income
             .group_by(["Year", "Income group"])
-            .agg(pl.col("DataValue").sum().alias("Investment"))
+            .agg(
+                pl.col("DataValue").sum().alias("Investment")
+            )
             .sort("Year")
         ).to_pandas()
         
-        # Add growth rate calculation
-        growth_data['Growth'] = growth_data.groupby('Income group')['Investment'].pct_change() * 100
-        
-        fig4 = px.line(
-            growth_data.dropna(),
+        fig1 = px.line(
+            income_trends,
             x="Year",
-            y="Growth",
+            y="Investment",
             color="Income group",
-            color_discrete_map=income_colors,
-            title="Year-over-Year Investment Growth Rate",
+            title=f"{title} by Income Group",
             template="plotly_dark"
         )
         
-        fig4.update_layout(
-            yaxis_title="Growth Rate (%)",
-            height=500
+        st.plotly_chart(fig1, use_container_width=True)
+    
+    with tab2:
+        # Calculate renewable percentage by income group
+        renewable_share = (df_with_income
+            .group_by(["Income group", "Category"])
+            .agg(
+                pl.col("DataValue").sum().alias("Total_Investment")
+            )
+            .pivot(
+                values="Total_Investment",
+                index="Income group",
+                columns="Category"
+            )
+            .with_columns(
+                (pl.col("Renewables") / (pl.col("Renewables") + pl.col("Non-renewables")) * 100)
+                .alias("Renewable_Share")
+            )
+        ).to_pandas()
+        
+        fig2 = px.bar(
+            renewable_share,
+            x="Income group",
+            y="Renewable_Share",
+            title="Renewable Energy Share by Income Group",
+            template="plotly_dark",
+            color="Renewable_Share",
+            color_continuous_scale=["#e74c3c", "#f1c40f", "#2ecc71"]
         )
         
-        st.plotly_chart(fig4, use_container_width=True)
-    
-    # Enhanced metrics dashboard
-    st.markdown("### Investment Metrics Dashboard")
-    
-    # Create three rows of metrics
-    row1_cols = st.columns(4)
-    row2_cols = st.columns(4)
-    row3_cols = st.columns(4)
-    
-    # Row 1: Total investments
-    with row1_cols[0]:
-        total_investment = df_with_income["DataValue"].sum()
-        st.metric(
-            "Total Investment",
-            f"${total_investment/1000:.1f}B"
+        fig2.update_layout(
+            yaxis_title="Renewable Share (%)",
+            coloraxis_showscale=False
         )
-    
-    with row1_cols[1]:
-        avg_investment = df_with_income["DataValue"].mean()
-        st.metric(
-            "Average Annual Investment",
-            f"${avg_investment:.1f}M"
-        )
-    
-    with row1_cols[2]:
-        high_income_share = (
-            year_data[year_data["Income group"] == "High income"]["Investment"].iloc[0] /
-            year_data["Investment"].sum() * 100
-        )
-        st.metric(
-            "High Income Share",
-            f"{high_income_share:.1f}%"
-        )
-    
-    with row1_cols[3]:
-        low_income_share = (
-            year_data[year_data["Income group"] == "Low income"]["Investment"].iloc[0] /
-            year_data["Investment"].sum() * 100
-        )
-        st.metric(
-            "Low Income Share",
-            f"{low_income_share:.1f}%"
-        )
-    
-    # Row 2: Growth metrics
-    growth_metrics = growth_data.groupby('Income group')['Growth'].agg(['mean', 'max', 'min']).round(1)
-    
-    for i, income_group in enumerate(growth_metrics.index):
-        with row2_cols[i]:
-            st.metric(
-                f"{income_group} Growth",
-                f"{growth_metrics.loc[income_group, 'mean']:.1f}%",
-                f"Max: {growth_metrics.loc[income_group, 'max']:.1f}%"
-            )
-    
-    # Add trend analysis with expandable sections
-    st.markdown("### Detailed Analysis")
-    
-    with st.expander("Investment Patterns"):
-        st.markdown("""
-        #### Key Findings
-        - **High Income Countries**: Lead in investment volume with consistent growth
-        - **Middle Income Transition**: Upper middle income countries show rapid growth
-        - **Investment Gap**: Significant disparity between high and low income groups
-        - **Growth Potential**: Lower middle income countries show promising growth rates
+        
+        st.plotly_chart(fig2, use_container_width=True)
+        
+        # Add insights
+        st.info("""
+        💡 According to IRENA:
+        • High-income countries tend to have higher renewable shares due to better access to technology and financing
+        • Middle-income countries show rapid growth in renewable adoption
+        • Low-income countries face significant barriers in renewable energy investment
         """)
+
+def country_investment_analysis(df, income_groups, title):
+    """Analyze country-specific investment patterns and sources"""
+    st.subheader("Country-Specific Investment Analysis")
     
-    with st.expander("Regional Insights"):
-        st.markdown("""
-        #### Regional Distribution
-        - Analysis of investment patterns across regions
-        - Identification of regional leaders and laggards
-        - Assessment of regional growth potential
-        """)
+    # Get unique countries
+    countries = sorted(df["Economy"].unique().to_list())
     
-    with st.expander("Policy Implications"):
-        st.markdown("""
-        #### Policy Recommendations
-        - Strategies for reducing investment gaps
-        - Opportunities for cross-regional collaboration
-        - Focus areas for development support
+    # Country selector
+    selected_country = st.selectbox(
+        "Select Country to Analyze",
+        options=countries,
+        help="View detailed investment patterns for a specific country"
+    )
+    
+    # Filter data for selected country
+    country_data = df.filter(pl.col("Economy") == selected_country)
+    
+    # Create tabs for different views
+    tab1, tab2 = st.tabs(["Investment Trends", "Technology Mix"])
+    
+    with tab1:
+        # Calculate yearly investment trends
+        yearly_data = (country_data
+            .group_by(["Year", "Category"])
+            .agg([
+                pl.col("DataValue").sum().alias("Investment")
+            ])
+            .sort("Year")
+        ).to_pandas()
+        
+        # Create line chart
+        fig = px.line(
+            yearly_data,
+            x="Year",
+            y="Investment",
+            color="Category",
+            title=f"Investment Trends in {selected_country}",
+            template="plotly_dark"
+        )
+        
+        fig.update_layout(
+            height=500,
+            yaxis_title="Investment (USD Million)",
+            hovermode="x unified"
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with tab2:
+        # Technology distribution
+        tech_data = (country_data
+            .group_by("Technology")
+            .agg([
+                pl.col("DataValue").sum().alias("Total_Investment")
+            ])
+            .sort("Total_Investment", descending=True)
+        ).to_pandas()
+        
+        fig2 = px.pie(
+            tech_data,
+            values="Total_Investment",
+            names="Technology",
+            title=f"Technology Distribution in {selected_country}",
+            template="plotly_dark"
+        )
+        
+        st.plotly_chart(fig2, use_container_width=True)
+    
+    # Add context and insights
+    with st.expander("📊 Country Investment Context"):
+        # Get country's income group
+        country_income = income_groups.filter(
+            pl.col("Economy") == selected_country
+        )["Income group"].item()
+        
+        # Calculate key metrics
+        total_inv = country_data["DataValue"].sum()
+        avg_annual = country_data.group_by("Year").agg(
+            pl.col("DataValue").sum()
+        )["DataValue"].mean()
+        
+        st.markdown(f"""
+        ### Investment Profile: {selected_country}
+        
+        #### 🏦 Economic Context
+        • Income Classification: {country_income}
+        • Total Investment: ${total_inv/1000:.1f}B
+        • Average Annual Investment: ${avg_annual:.1f}M
+        
+        #### 📈 Investment Patterns
+        According to IRENA's analysis, investment patterns vary significantly based on income 
+        classification and risk perception. {country_income} countries typically show 
+        {'higher access to diverse funding sources' if country_income == 'High income' 
+        else 'specific challenges in attracting private investment'}.
+        
+        #### 💡 Key Considerations
+        • Public finance plays a crucial role in derisking projects
+        • Investment needs vary by technology maturity
+        • Regional and income-based disparities affect investment flows
         """)
 
 def main():
@@ -1191,21 +1137,29 @@ def main():
     st.markdown("""
     ### Tracking Global Progress in Sustainable Energy Adoption
     
-    This interactive dashboard explores the global transition to clean energy through the lens of 
-    investment patterns, technological breakthroughs, and regional adoption rates. Aligned with the 
-    UN's Sustainable Development Goal 7 (SDG7), it provides insights into the worldwide journey 
-    toward sustainable and modern energy for all.
+    This interactive dashboard analyzes public investment data in renewable energy technologies, 
+    sourced from [IRENA's comprehensive database](https://www.irena.org/Energy-Transition/Finance-and-investment/Investment). 
+    The data reveals critical insights about global energy transition progress and challenges.
     
-    #### 🎯 Key Focus Areas
+    #### 🌍 Global Context
+    According to IRENA's latest findings:
+    • Global energy transition investment reached **$1.3 trillion** in 2022
+    • Current investment levels need to **quadruple** to meet 1.5°C climate goals
+    • Public sector provides about **one-third** of renewable energy investment
+    • Private investment favors mature technologies and lower-risk markets
+    
+    #### 🎯 Dashboard Focus Areas
     • Regional investment patterns and disparities
     • Technology adoption across income groups
-    • Impact of technological breakthroughs
+    • Public investment flows and trends
     • Progress tracking toward SDG7 goals
     
-    #### 📊 How to Use This Dashboard
-    Use the sidebar filters to focus on specific regions or time periods. Each section provides 
-    different insights into the clean energy transition, from global trends to detailed country-level 
-    analysis.
+    #### 📊 Data Insights
+    This tool specifically tracks public investment data, which plays a crucial role in:
+    • Derisking projects to attract private capital
+    • Supporting emerging technologies
+    • Addressing market gaps in underserved regions
+    • Accelerating clean energy adoption in developing economies
     """)
     
     # Add divider
@@ -1255,6 +1209,10 @@ def main():
     
     st.header("📈 6. Growth & Impact Analysis")
     growth_rate_analysis(filtered_data, income_groups, "Clean Energy Investment")
+    
+    # Add the new country analysis section
+    st.header("🏢 7. Country Investment Analysis")
+    country_investment_analysis(filtered_data, income_groups, "Clean Energy Investment")
     
     # Add footer with additional context
     st.markdown("---")

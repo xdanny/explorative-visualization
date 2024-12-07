@@ -1,5 +1,5 @@
 ## Clean Energy Investment Explorer
-An interactive dashboard for exploring global clean energy adoption patterns, technological breakthroughs, and investment trends. Built with Streamlit and powered by IRENA's public investment data.
+An interactive dashboard for exploring global clean energy adoption patterns, technological breakthroughs, and investment trends. Built with Streamlit and powered by IRENA's public investment data. The app is currently hosted on StreamLit Cloud and can be accessed [here](https://explorative-visualization-rmmwdmd3dsjnbwkso9d9ov.streamlit.app/).
 
 ### 🎯 Project Overview
 This visualization tool provides insights into:

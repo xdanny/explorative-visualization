@@ -1028,6 +1028,10 @@ def country_investment_analysis(df, income_groups, title):
     # Get unique countries
     countries = sorted(df["Economy"].unique().to_list())
     
+    if not countries:
+        st.warning("No country data available for the selected filters.")
+        return
+    
     # Country selector
     selected_country = st.selectbox(
         "Select Country to Analyze",
@@ -1037,6 +1041,17 @@ def country_investment_analysis(df, income_groups, title):
     
     # Filter data for selected country
     country_data = df.filter(pl.col("Economy") == selected_country)
+    
+    # Get country's income group with error handling
+    try:
+        country_income_data = income_groups.filter(pl.col("Economy") == selected_country)
+        if len(country_income_data) > 0:
+            country_income = country_income_data["Income group"].item()
+        else:
+            country_income = "Not classified"
+    except Exception as e:
+        country_income = "Not classified"
+        st.warning(f"Income group data not available for {selected_country}")
     
     # Create tabs for different views
     tab1, tab2 = st.tabs(["Investment Trends", "Technology Mix"])
@@ -1049,25 +1064,30 @@ def country_investment_analysis(df, income_groups, title):
                 pl.col("DataValue").sum().alias("Investment")
             ])
             .sort("Year")
-        ).to_pandas()
-        
-        # Create line chart
-        fig = px.line(
-            yearly_data,
-            x="Year",
-            y="Investment",
-            color="Category",
-            title=f"Investment Trends in {selected_country}",
-            template="plotly_dark"
         )
         
-        fig.update_layout(
-            height=500,
-            yaxis_title="Investment (USD Million)",
-            hovermode="x unified"
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
+        if len(yearly_data) > 0:
+            yearly_data = yearly_data.to_pandas()
+            
+            # Create line chart
+            fig = px.line(
+                yearly_data,
+                x="Year",
+                y="Investment",
+                color="Category",
+                title=f"Investment Trends in {selected_country}",
+                template="plotly_dark"
+            )
+            
+            fig.update_layout(
+                height=500,
+                yaxis_title="Investment (USD Million)",
+                hovermode="x unified"
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info(f"No investment trend data available for {selected_country}")
     
     with tab2:
         # Technology distribution
@@ -1077,30 +1097,34 @@ def country_investment_analysis(df, income_groups, title):
                 pl.col("DataValue").sum().alias("Total_Investment")
             ])
             .sort("Total_Investment", descending=True)
-        ).to_pandas()
-        
-        fig2 = px.pie(
-            tech_data,
-            values="Total_Investment",
-            names="Technology",
-            title=f"Technology Distribution in {selected_country}",
-            template="plotly_dark"
         )
         
-        st.plotly_chart(fig2, use_container_width=True)
+        if len(tech_data) > 0:
+            tech_data = tech_data.to_pandas()
+            
+            fig2 = px.pie(
+                tech_data,
+                values="Total_Investment",
+                names="Technology",
+                title=f"Technology Distribution in {selected_country}",
+                template="plotly_dark"
+            )
+            
+            st.plotly_chart(fig2, use_container_width=True)
+        else:
+            st.info(f"No technology distribution data available for {selected_country}")
     
     # Add context and insights
     with st.expander("📊 Country Investment Context"):
-        # Get country's income group
-        country_income = income_groups.filter(
-            pl.col("Economy") == selected_country
-        )["Income group"].item()
-        
-        # Calculate key metrics
-        total_inv = country_data["DataValue"].sum()
-        avg_annual = country_data.group_by("Year").agg(
-            pl.col("DataValue").sum()
-        )["DataValue"].mean()
+        # Calculate key metrics with error handling
+        try:
+            total_inv = country_data["DataValue"].sum()
+            avg_annual = country_data.group_by("Year").agg(
+                pl.col("DataValue").sum()
+            )["DataValue"].mean()
+        except Exception as e:
+            total_inv = 0
+            avg_annual = 0
         
         st.markdown(f"""
         ### Investment Profile: {selected_country}
